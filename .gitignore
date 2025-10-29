@@ -210,9 +210,6 @@ __marimo__/
 data/raw/
 data/processed/
 models/
-!models/.gitkeep
-!data/raw/.gitkeep
-!data/processed/.gitkeep
 
 # DVC
 .dvc/
