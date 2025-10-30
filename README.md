@@ -1,7 +1,7 @@
 
 # MAT Engine: Satellite-Driven Nitrogen Intelligence Platform
 
-**Meyer AgTech Engine (MAT Engine)** is a geospatial machine learning system designed to model crop health and predict nitrogen deficiencies from **Sentinel-2 multispectral imagery**.  
+**Meyer Ag Technologies Engine (MAT Engine)** is a geospatial machine learning system designed to model crop health and predict nitrogen deficiencies from **Sentinel-2 multispectral imagery**.  
 It integrates modern data engineering practices, spatiotemporal deep learning, and geospatial visualization to transform open satellite data into actionable agronomic insights.
 
 ---
