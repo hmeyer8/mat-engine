@@ -1,0 +1,52 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: matengine-db
+    environment:
+      POSTGRES_USER: matengine
+      POSTGRES_PASSWORD: matengine
+      POSTGRES_DB: matengine
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U matengine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./api
+    container_name: matengine-api
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:postgresql://db:5432/matengine
+      DB_USER: matengine
+      DB_PASS: matengine
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  ml-worker:
+    build: ./ml-worker
+    container_name: matengine-ml
+    environment:
+      MODEL_PATH: /models/latest.pt
+    ports:
+      - "8001:8001"
+
+  ui:
+    build: ./ui
+    container_name: matengine-ui
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  db_data:
