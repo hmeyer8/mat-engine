@@ -1,116 +1,101 @@
+# MAT Engine: Satellite‑Driven Nitrogen Intelligence Platform
 
-# MAT Engine: Satellite-Driven Nitrogen Intelligence Platform
-
-**Meyer Ag Technologies Engine (MAT Engine)** is a geospatial machine learning system designed to model crop health and predict nitrogen deficiencies from **Sentinel-2 multispectral imagery**.  
-It integrates modern data engineering practices, spatiotemporal deep learning, and geospatial visualization to transform open satellite data into actionable agronomic insights.
-
----
-
-## Overview
-
-MAT Engine is built to support **precision agriculture at scale**.  
-It leverages publicly available Earth observation data to:
-- Quantify crop vigor through vegetation indices (NDVI, NDRE, GNDVI)  
-- Detect and forecast **nitrogen stress** at sub-field resolution  
-- Provide interpretable, map-based recommendations for agronomists and growers  
-
-All model development is conducted locally on a high-performance workstation equipped with an **Intel i5-13600KF** and **RTX 4060 (8 GB)** GPU, with future migration planned to **cloud-based distributed training** (AWS SageMaker / Vertex AI).
-
----
-
-## Experimental Region
-
-Initial prototyping and model validation focus on a **2 mi² test area** centered at:
-
-> **40°56′42.9″ N, 97°55′17.9″ W**  
-> Selected for its representative crop diversity and spectral separability.
-
----
+MAT Engine is a geospatial machine learning system that models crop health and predicts nitrogen deficiencies from Sentinel‑2 imagery. It includes:
+- A Spring Boot API for services and orchestration
+- A Next.js UI for visualization
+- (Optional) Python components for data/ML workflows
 
 ## Project Architecture
-
 ```
 mat-engine/
-├── data/
-│   ├── raw/              ← unprocessed Sentinel-2 scenes
-│   └── processed/        ← cloud-masked, tiled, and labeled NDVI datasets
-├── src/
-│   ├── ingest.py         ← satellite data acquisition (SentinelHub / eo-learn)
-│   ├── preprocess.py     ← cloud masking, vegetation index computation, tiling
-│   ├── train.py          ← GPU-accelerated training (ResNet, ConvLSTM, U-Net)
-│   ├── evaluate.py       ← validation, cross-region metrics, and explainability
-│   ├── predict.py        ← batch inference and visualization utilities
-│   ├── pipeline.py       ← orchestrates full pipeline (ingest → train → evaluate)
-│   └── utils/            ← configuration, logging, and I/O helpers
-├── models/               ← serialized checkpoints and artifacts (git-ignored)
-├── app/
-│   └── main.py           ← FastAPI service for model inference and API delivery
-├── Dockerfile            ← GPU-ready image for deployment
-├── requirements.txt
-├── dvc.yaml              ← optional: DVC data-versioning pipeline
+├── api/                      ← Spring Boot REST API
+│   ├── src/main/java/com/matengine/api/
+│   │   ├── web/PingController.java
+│   │   └── config/CorsConfig.java     ← dev-only CORS
+│   └── src/main/resources/application.yml
+├── ui/                       ← Next.js app (dashboard)
+│   ├── src/app/page.tsx
+│   └── next.config.ts
+├── data/                     ← optional: local data workspace (git-ignored)
+│   ├── raw/
+│   └── processed/
+├── models/                   ← optional: model artifacts (git-ignored)
+├── .env                      ← local env (not committed)
+├── .env.example              ← example env for contributors
 └── README.md
 ```
 
----
+## Prerequisites
+- Windows 10/11
+- Java 17+, Node.js 18+, Git
+- Optional: Docker Desktop (for compose)
 
-## Getting Started (Windows / PowerShell)
+## Quickstart (Local Dev)
 
-### 1) Environment setup
-```powershell
-python -m venv .venv
-\.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+1) Configure environment
+- Copy `.env.example` → `.env` and adjust if needed:
+  - API_PORT=8080
+  - UI_ORIGIN=http://localhost:3000
+  - NEXT_PUBLIC_API_URL=http://localhost:8080
+
+For the UI:
+- Create `ui/.env.local` (already present):
+```
+NEXT_PUBLIC_API_URL=http://localhost:8080
 ```
 
-### 2) Execute the ML pipeline
-```powershell
-python -m src.pipeline
-# or run specific stages
-python -m src.pipeline --steps ingest,preprocess,train
+2) Run the API
+```
+# PowerShell
+$env:SPRING_PROFILES_ACTIVE = "dev"
+$env:UI_ORIGIN = "http://localhost:3000,http://localhost:3001"
+$env:API_PORT = "8080"
+cd api
+.\gradlew.bat bootRun
+```
+Verify:
+```
+curl http://localhost:8080/api/ping
+# {"message":"MAT Engine API running"}
+curl http://localhost:8080/actuator/health
 ```
 
-### 3) Launch the local API
-```powershell
-uvicorn app.main:app --reload
+3) Run the UI
+```
+cd ui
+npm install
+npm run dev -- -p 3000
+# open http://localhost:3000
 ```
 
-Then open http://127.0.0.1:8000/docs for the interactive Swagger UI.
+## Run with Docker (optional)
+Ensure Docker Desktop is running.
+```
+docker compose build
+docker compose up -d
+# UI:  http://localhost:3000
+# API: http://localhost:8080/api/ping
+```
 
-## Model Development
-The current baseline leverages ResNet-18 pretrained on ImageNet, fine-tuned on Sentinel-2 NDVI composites. Future iterations will incorporate:
+## Configuration
+- API_PORT: port the Spring API listens on (default 8080)
+- UI_ORIGIN: allowed browser origins (CORS). Comma‑separated for dev, e.g. `http://localhost:3000,http://localhost:3001`
+- NEXT_PUBLIC_API_URL: base URL the UI calls, e.g. `http://localhost:8080`
 
-| Phase | Model                       | Objective                                 |
-|------:|-----------------------------|-------------------------------------------|
-|     1 | ResNet-18 / EfficientNet-B0 | Baseline spatial nitrogen classification  |
-|     2 | ConvLSTM / Temporal CNN     | Multi-date NDVI time-series forecasting   |
-|     3 | U-Net / DeepLabV3+          | Sub-field nitrogen stress segmentation    |
-|     4 | Vision Transformer (ViT)    | Global-context spatial–temporal modeling  |
+## API Endpoints
+- GET `/api/ping` → health message
+- GET `/actuator/health` → liveness/readiness
 
-All training utilizes mixed precision (FP16) and gradient scaling for maximal GPU efficiency.
-Evaluation includes R², RMSE, F1, and IoU metrics, alongside Grad-CAM visual attribution for interpretability.
+## Troubleshooting
+- UI shows “Error connecting to API”
+  - Verify API is up: `curl http://localhost:8080/api/ping`
+  - Confirm UI env: `ui/.env.local` has `NEXT_PUBLIC_API_URL=http://localhost:8080`
+  - Free port 3000: `netstat -ano | findstr :3000` → `taskkill /PID <PID> /F`
+  - Ensure CORS includes your UI port via `UI_ORIGIN`
+- Next.js warns about workspace root
+  - Already pinned in `ui/next.config.ts`
+- Avoid committing build output
+  - Ensure `.gitignore` excludes `api/bin`, `build`, and `ui/.next`
 
-## Data Processing Standards
-- Acquisition: Sentinel-2 L2A imagery via SentinelHub or Google Earth Engine
-- Cloud masking: `s2cloudless` + morphological filtering
-- Index derivation: `NDVI = (B8 − B4) / (B8 + B4)`; `NDRE = (B8 − B5) / (B8 + B5)`
-- Tiling: 128–256 px patches aligned to field boundaries
-- Normalization: Per-band standardization and temporal stacking
-
-All preprocessing steps are reproducible through version-controlled scripts and DVC integration.
-
-## MLOps & Reproducibility
-- Experiment tracking: MLflow / Weights & Biases
-- Data versioning: DVC + Git LFS (optional)
-- Containerization: Docker (GPU base image)
-- Future integration: AWS S3 + SageMaker training pipelines
-
-
-Citation
-If referencing this work in academic or industrial contexts:
-
-Meyer, H. (2025). MAT Engine: Satellite-Driven Nitrogen Intelligence Platform.
-Lincoln Air National Guard / University of Nebraska – Lincoln.
-https://github.com/hmeyer8/mat-engine
-
-Vision
-“The goal of MAT Engine is to make high-resolution, nitrogen-aware crop intelligence accessible to every farmer—leveraging open satellite data, modern AI, and transparent science.”
+## License
+MIT
