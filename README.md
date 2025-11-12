@@ -1,101 +1,100 @@
 # MAT Engine: Satellite‑Driven Nitrogen Intelligence Platform
 
-MAT Engine is a geospatial machine learning system that models crop health and predicts nitrogen deficiencies from Sentinel‑2 imagery. It includes:
-- A Spring Boot API for services and orchestration
-- A Next.js UI for visualization
-- (Optional) Python components for data/ML workflows
+Docker-first setup to run API, UI, PostGIS, and a Sentinel‑2 ingestor.
 
-## Project Architecture
+## Structure
 ```
 mat-engine/
 ├── api/                      ← Spring Boot REST API
-│   ├── src/main/java/com/matengine/api/
-│   │   ├── web/PingController.java
-│   │   └── config/CorsConfig.java     ← dev-only CORS
-│   └── src/main/resources/application.yml
-├── ui/                       ← Next.js app (dashboard)
+│   ├── src/main/java/com/matengine/api/web/PingController.java
+│   ├── src/main/java/com/matengine/api/config/CorsConfig.java
+│   └── src/main/resources/{ application.yml, db/migration/V1__init.sql }
+├── ui/                       ← Next.js dashboard
 │   ├── src/app/page.tsx
 │   └── next.config.ts
-├── data/                     ← optional: local data workspace (git-ignored)
-│   ├── raw/
-│   └── processed/
-├── models/                   ← optional: model artifacts (git-ignored)
-├── .env                      ← local env (not committed)
-├── .env.example              ← example env for contributors
+├── ingestor/                 ← Python Sentinel‑2 ingestor (Planetary Computer)
+│   ├── Dockerfile
+│   └── ingest_s2.py
+├── data/                     ← mounted volume for imagery
+│   └── aoi/lincoln_ne_aoi.geojson
+├── docker-compose.yml
+├── .env.example
 └── README.md
 ```
 
 ## Prerequisites
-- Windows 10/11
-- Java 17+, Node.js 18+, Git
-- Optional: Docker Desktop (for compose)
+- Windows/macOS: Docker Desktop; Linux: Docker Engine + Compose
+- Java 17+ and Node 18+ are not required if using Docker, but useful for local dev
 
-## Quickstart (Local Dev)
-
-1) Configure environment
-- Copy `.env.example` → `.env` and adjust if needed:
-  - API_PORT=8080
-  - UI_ORIGIN=http://localhost:3000
-  - NEXT_PUBLIC_API_URL=http://localhost:8080
-
-For the UI:
-- Create `ui/.env.local` (already present):
+## 1) Configure environment
 ```
-NEXT_PUBLIC_API_URL=http://localhost:8080
+cp .env.example .env        # Windows PowerShell: Copy-Item .env.example .env -Force
 ```
+Edit .env if desired (ports, dates, cloud threshold).
 
-2) Run the API
+## 2) Build and run with Docker
 ```
-# PowerShell
-$env:SPRING_PROFILES_ACTIVE = "dev"
-$env:UI_ORIGIN = "http://localhost:3000,http://localhost:3001"
-$env:API_PORT = "8080"
-cd api
-.\gradlew.bat bootRun
+docker compose build --no-cache
+docker compose up -d db
+# wait until db is healthy, then:
+docker compose up -d api ui
 ```
 Verify:
 ```
 curl http://localhost:8080/api/ping
 # {"message":"MAT Engine API running"}
-curl http://localhost:8080/actuator/health
+open http://localhost:3001
 ```
 
-3) Run the UI
+## 3) Ingest Sentinel‑2 for Lincoln, NE
+The ingestor clips bands to the AOI and computes NDVI, saving GeoTIFF + PNG preview into ./data.
+
 ```
-cd ui
-npm install
-npm run dev -- -p 3000
-# open http://localhost:3000
+# Ensure data/aoi/lincoln_ne_aoi.geojson exists (already included)
+docker compose run --rm ingestor
+# outputs go to: data/raw/sentinel-2/* and data/processed/sentinel-2/*
 ```
 
-## Run with Docker (optional)
-Ensure Docker Desktop is running.
+To change dates/clouds:
 ```
-docker compose build
-docker compose up -d
-# UI:  http://localhost:3000
-# API: http://localhost:8080/api/ping
+START_DATE=2023-05-01 END_DATE=2023-06-30 MAX_CLOUD=10 docker compose run --rm ingestor
 ```
 
-## Configuration
-- API_PORT: port the Spring API listens on (default 8080)
-- UI_ORIGIN: allowed browser origins (CORS). Comma‑separated for dev, e.g. `http://localhost:3000,http://localhost:3001`
-- NEXT_PUBLIC_API_URL: base URL the UI calls, e.g. `http://localhost:8080`
+## 4) View NDVI in the UI
+- Open the dashboard at http://localhost:3000
+- The top-right shows API status; the selector lists available NDVI previews
+- Pick a preview to render the PNG served by the API from `data/processed/sentinel-2/`
 
-## API Endpoints
-- GET `/api/ping` → health message
-- GET `/actuator/health` → liveness/readiness
+Endpoints used by the UI:
+- GET `http://localhost:8080/api/ndvi/list` → `[ { "file": "ndvi_YYYY-MM-DD_TILE.png", "tif": "..." }, ... ]`
+- GET `http://localhost:8080/api/ndvi/image?file=ndvi_YYYY-MM-DD_TILE.png` → image/png stream
+
+Tip: If the list is empty, run the ingestor first and refresh the page.
+
+## Local development (optional)
+- API (dev CORS): runs with SPRING_PROFILES_ACTIVE=dev and UI_ORIGIN from .env
+- UI: uses ui/.env.local → NEXT_PUBLIC_API_URL=http://localhost:8080; UI runs on http://localhost:3001 by default (configurable via UI_PORT)
+
+Commands:
+```
+# API
+$env:SPRING_PROFILES_ACTIVE="dev"; $env:UI_ORIGIN="http://localhost:3000"; cd api; .\gradlew.bat bootRun
+# UI
+cd ui; npm install; npm run dev -- -p 3000
+```
+
+## CORS policy
+- Dev (default): enabled only when `SPRING_PROFILES_ACTIVE=dev` to allow localhost UI origins (UI_ORIGIN env, default http://localhost:3001).
+- Prod: prefer same-origin (reverse proxy). If cross-origin is required, set `UI_ORIGIN` to your UI domain and enable CORS for that profile.
 
 ## Troubleshooting
-- UI shows “Error connecting to API”
-  - Verify API is up: `curl http://localhost:8080/api/ping`
-  - Confirm UI env: `ui/.env.local` has `NEXT_PUBLIC_API_URL=http://localhost:8080`
-  - Free port 3000: `netstat -ano | findstr :3000` → `taskkill /PID <PID> /F`
-  - Ensure CORS includes your UI port via `UI_ORIGIN`
-- Next.js warns about workspace root
-  - Already pinned in `ui/next.config.ts`
-- Avoid committing build output
-  - Ensure `.gitignore` excludes `api/bin`, `build`, and `ui/.next`
+- Docker not running: start Docker Desktop (Windows/macOS) or systemd service (Linux).
+- Port in use: free 3000/8080 (Windows: `netstat -ano | findstr :3000` → `taskkill /PID <PID> /F`).
+- UI shows “Error connecting to API”: ensure API is up; NEXT_PUBLIC_API_URL in UI and CORS UI_ORIGIN match.
+- DB migrations: API logs should show Flyway applying V1__init.sql; check `docker compose logs api`.
 
-## License
-MIT
+## Notes
+- API reads PNGs from `./data/processed/sentinel-2/` mounted read-only at `/workspace/data` in the container.
+- Ingestor writes to the same `./data` folder on the host, so outputs immediately become visible to the API and UI.
+
+License: MIT

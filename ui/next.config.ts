@@ -1,11 +1,6 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  experimental: {
-    turbopack: {
-      root: __dirname, // pin workspace root to /ui
-    },
-  },
-};
+// Minimal config; Turbopack is enabled by default in Next 16
+const nextConfig: NextConfig = {};
 
 export default nextConfig;

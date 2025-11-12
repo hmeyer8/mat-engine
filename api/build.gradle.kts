@@ -15,6 +15,8 @@ repositories {
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.postgresql:postgresql:42.7.4")
+    implementation("org.flywaydb:flyway-core:10.17.0")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 }
 

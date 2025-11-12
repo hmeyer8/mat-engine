@@ -1,0 +1,5 @@
+# Ignore Gradle build outputs for API module
+bin/
+build/
+out/
+*.log
