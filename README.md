@@ -2,7 +2,7 @@ MAT Engine
 ====================================
 A Python-based satellite analysis system that turns Sentinel-2 multispectral scenes into farmer-ready overlays, processed locally for privacy and reproducibility.
 
-The repository mirrors the updated specification: deterministic ingest → preprocess → temporal SVD → overlay generation, a FastAPI backend, a React UI placeholder, and documentation tuned for humans *and* automation agents.
+The repository mirrors the updated specification: deterministic ingest → preprocess → temporal SVD → overlay generation, a FastAPI backend, a Vite/React UI, and documentation tuned for humans *and* automation agents.
 
 ---
 
@@ -19,7 +19,7 @@ source .venv/bin/activate        # Linux/macOS
 pip install -r requirements.txt
 
 # Optional GPU build (CUDA 12.1)
-
+pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio
 ```
 
 Copy `.env.example` → `.env` and fill in the blanks:
@@ -37,6 +37,7 @@ MAT_GPU_PRECISION=fp32
 MAT_API_HOST=0.0.0.0
 MAT_API_PORT=8080
 MAT_API_CORS=http://localhost:5173
+MAPS_API_KEY=
 NEXT_PUBLIC_API_URL=http://localhost:8080
 ```
 
@@ -90,12 +91,12 @@ docker compose up --build api
 
 ```json
 {
-	"field_id": "example123",
-	"zip_code": "68430",
-	"geometry": {
-		"type": "Polygon",
-		"coordinates": [[[ -96.75, 40.60 ], [ -96.74, 40.60 ], [ -96.74, 40.61 ], [ -96.75, 40.61 ], [ -96.75, 40.60 ]]]
-	}
+  "field_id": "example123",
+  "zip_code": "68430",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[[ -96.75, 40.60 ], [ -96.74, 40.60 ], [ -96.74, 40.61 ], [ -96.75, 40.61 ], [ -96.75, 40.60 ]]]
+  }
 }
 ```
 
@@ -103,11 +104,11 @@ docker compose up --build api
 
 ```json
 {
-	"field_id": "example123",
-	"field_health_score": 0.83,
-	"stress_label": "moderate",
-	"overlay_path": "data/processed/example123/overlay.png",
-	"svd_stats_path": "data/processed/example123/svd_stats.json"
+  "field_id": "example123",
+  "field_health_score": 0.83,
+  "stress_label": "moderate",
+  "overlay_path": "data/processed/example123/overlay.png",
+  "svd_stats_path": "data/processed/example123/svd_stats.json"
 }
 ```
 
@@ -115,10 +116,10 @@ docker compose up --build api
 
 ```json
 {
-	"field_id": "example123",
-	"index": "ndvi",
-	"temporal_profile": [0.62, 0.68, 0.71, 0.66],
-	"latest": 0.66
+  "field_id": "example123",
+  "index": "ndvi",
+  "temporal_profile": [0.62, 0.68, 0.71, 0.66],
+  "latest": 0.66
 }
 ```
 
@@ -127,7 +128,7 @@ docker compose up --build api
 ## Backend ↔ UI Contract
 
 - UI reads `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8080`).
-- Overlay PNG fetched from `/fields/{field_id}/overlay` and draped on Google Maps via `MAPS_API_KEY`.
+- Overlay PNG fetched from `/fields/{field_id}/overlay` and draped on Google Maps via `MAPS_API_KEY` (UI currently renders PNG directly; maps integration is next).
 - Future endpoints (`/fields/{id}/tiles`, `/auth/*`) are documented for planning but not yet implemented.
 
 ---
@@ -145,7 +146,7 @@ docker compose up --build api
 
 ## GPU & Performance Notes
 
-- CUDA 12.x drivers, cuDNN 9+, PyTorch installed via `pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio`.
+- CUDA 12.x drivers, cuDNN 9+, PyTorch installed via the CUDA 12.1 wheels.
 - Minimum hardware: RTX 3060 12 GB (or higher) for CNN workloads; current NDVI/SVD pipeline runs on CPU if `MAT_GPU_ENABLED=false`.
 - Future PyO3/Rust accelerators will respect `MAT_GPU_ENABLED` and `MAT_GPU_DEVICE`.
 
@@ -214,51 +215,3 @@ Vegetation changes slowly, so a small $k$ captures most agronomic signal.
 - Edge-device export for tractors/drones.
 
 Built to be understandable, scientifically grounded, and farmer-first. If anything is unclear, open an issue and it will be clarified immediately.
-9.2 Singular Value Decomposition
-
-SVD decomposes the matrix:
-
-X = U Σ Vᵀ
-
-
-Interpretation:
-
-U → temporal behavior
-
-Σ → strength of temporal patterns
-
-V → spectral structure
-
-9.3 Low-Rank Approximation
-
-A rank-k approximation is:
-
-X_k = U_k Σ_k V_kᵀ
-
-
-This filters noise and highlights meaningful vegetation changes.
-
-9.4 Why It Works
-
-Vegetation reflectance evolves gradually, making it well-suited to low-rank temporal modeling.
-
-10. Future Work
-
-Landsat-8/9 temporal enhancement
-
-Deploy CNN stress classifiers
-
-Historical trend reports
-
-Local offline “field kit”
-
-Edge-device support
-
-Multi-field comparison views
-
-11. Closing Notes
-
-MAT Engine is designed to be:
-
-Understandable
-
