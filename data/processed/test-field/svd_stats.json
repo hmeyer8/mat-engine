@@ -1,0 +1,13 @@
+{
+  "field_id": "test-field",
+  "rank": 2,
+  "singular_values": [
+    1.4953500032424927,
+    9.999999974752427e-07
+  ],
+  "explained_variance": [
+    1.0,
+    0.0
+  ],
+  "source": "C:\\Users\\henme\\.code_space\\mat-engine\\data\\processed\\test-field\\ndvi_stack.npz"
+}

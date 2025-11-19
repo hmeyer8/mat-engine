@@ -1,0 +1,6 @@
+{
+  "field_id": "test-field",
+  "tile_size": 16,
+  "num_scenes": 5,
+  "source_manifest": "C:\\Users\\henme\\.code_space\\mat-engine\\data\\raw\\test-field\\ingest_manifest.json"
+}

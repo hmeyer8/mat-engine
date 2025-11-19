@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/components/fieldselector.tsx","./src/components/ndvichart.tsx","./src/components/overlaypanel.tsx","./src/components/summarycard.tsx","./src/components/svdpanel.tsx","./src/hooks/usedashboarddata.ts","./src/lib/api.ts"],"version":"5.9.3"}

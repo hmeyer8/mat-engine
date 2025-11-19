@@ -1,54 +1,40 @@
-# ──────────────────────────────
-# MAT Engine Smart Rebuild Makefile
-# ──────────────────────────────
+PYTHON ?= python
+FIELD ?= demo-field
+ZIP ?= 68430
+START ?= 2022-01-01
+END ?= 2023-01-01
 
-# Detect changes using git diff and rebuild only affected services
-smart-rebuild:
-	@echo "Detecting changes since last commit..."
-	$(eval CHANGED := $(shell git diff --name-only HEAD~1 HEAD 2>/dev/null || git ls-files --modified))
-	@echo "Changed files:\n$(CHANGED)\n"
+.PHONY: setup ingest preprocess svd overlay pipeline api ui lint test clean
 
-	$(eval REBUILD_API := $(shell echo "$(CHANGED)" | grep -q '^api/' && echo true || echo false))
-	$(eval REBUILD_ML := $(shell echo "$(CHANGED)" | grep -q '^ml-worker/' && echo true || echo false))
-	$(eval REBUILD_UI := $(shell echo "$(CHANGED)" | grep -q '^ui/' && echo true || echo false))
+setup:
+	$(PYTHON) -m venv .venv
+	. .\.venv\Scripts\activate && pip install --upgrade pip && pip install -r requirements.txt
 
-	@if [ "$(REBUILD_API)" = "true" ]; then \
-		echo "Rebuilding API service..."; \
-		docker compose build --no-cache api; \
-	fi
+ingest:
+	$(PYTHON) -m src.ingest.run_ingest $(FIELD) $(ZIP) $(START) $(END)
 
-	@if [ "$(REBUILD_ML)" = "true" ]; then \
-		echo "Rebuilding ML Worker service..."; \
-		docker compose build --no-cache ml-worker; \
-	fi
+preprocess:
+	$(PYTHON) -m src.preprocessing.run_preprocessing $(FIELD)
 
-	@if [ "$(REBUILD_UI)" = "true" ]; then \
-		echo "Rebuilding UI service..."; \
-		docker compose build --no-cache ui; \
-	fi
+svd:
+	$(PYTHON) -m src.temporal_svd.run_svd $(FIELD)
 
-	@if [ "$(REBUILD_API)$(REBUILD_ML)$(REBUILD_UI)" = "falsefalsefalse" ]; then \
-		echo "No service-level changes detected. Nothing to rebuild."; \
-	else \
-		echo "\n Restarting stack..."; \
-		docker compose up -d; \
-	fi
+overlay:
+	$(PYTHON) -m src.analysis.build_overlay $(FIELD)
 
+pipeline: ingest preprocess svd overlay
 
-rebuild-api:
-	docker compose build --no-cache api && docker compose up -d && docker logs -f matengine-api
+api:
+	uvicorn src.api.main:app --reload --host $${MAT_API_HOST:-0.0.0.0} --port $${MAT_API_PORT:-8080}
 
-rebuild-ml:
-	docker compose build --no-cache ml-worker && docker compose up -d && docker logs -f matengine-ml
+ui:
+	cd ui && npm install && npm run dev
 
-rebuild-ui:
-	docker compose build --no-cache ui && docker compose up -d && docker logs -f matengine-ui
+lint:
+	$(PYTHON) -m pytest --collect-only
 
-rebuild-all:
-	docker compose build --no-cache && docker compose up -d
+test:
+	$(PYTHON) -m pytest -q
 
-logs-api:
-	docker logs -f matengine-api
-
-status:
-	docker compose ps
+clean:
+	rm -rf __pycache__ */__pycache__ .pytest_cache .venv data/raw/* data/processed/*

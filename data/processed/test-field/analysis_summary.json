@@ -1,0 +1,7 @@
+{
+  "field_id": "test-field",
+  "field_health_score": 0.0418,
+  "stress_label": "high",
+  "overlay_path": "C:\\Users\\henme\\.code_space\\mat-engine\\data\\processed\\test-field\\overlay.png",
+  "svd_stats_path": "C:\\Users\\henme\\.code_space\\mat-engine\\data\\processed\\test-field\\svd_stats.json"
+}
