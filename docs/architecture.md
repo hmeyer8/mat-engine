@@ -11,13 +11,10 @@ mat-engine/
 ├── docs/
 ├── notebooks/
 ├── src/
-│   ├── ingest/
-│   ├── preprocessing/
-│   ├── temporal_svd/
-│   ├── analysis/
-│   ├── models/
 │   ├── api/
-│   └── utils/
+│   ├── models/
+│   ├── utils/
+│   └── pipeline.py
 ├── tests/
 ├── ui/
 ├── requirements.txt
@@ -34,16 +31,13 @@ mat-engine/
 Existing sub-projects (`api/`, `mat-engine-ui/`, `ml-worker/`, `rust-core/`) are superseded by this structure and will be removed to avoid confusion.
 
 ## Pipeline Phases
-1. `src/ingest` – fetch Sentinel-2 data (initially mocked, later real downloaders).
-2. `src/preprocessing` – cloud mask, vegetation indices, tiling.
-3. `src/temporal_svd` – construct tile matrices and compute SVD/low-rank approximations.
-4. `src/analysis` – aggregate tile-level signals into field overlays and scores.
-5. `src/models` – inference-ready abstractions (baseline heuristic now, PyTorch later).
+1. `src/pipeline.py` – ingest → preprocess → temporal SVD → overlay + CNN fusion (single orchestration point).
+2. `src/models` – inference-ready abstractions (baseline heuristic now, PyTorch later).
 6. `src/api` – FastAPI service exposing summaries/overlays/indices endpoints.
 7. `src/utils` – shared helpers (raster IO, geometry, configuration).
 
 ## Execution Flow
-- CLI entrypoints under each module (`run_ingest.py`, `run_preprocessing.py`, etc.) accept explicit arguments so the workflow can be chained manually or automated via the `Makefile`.
+- A single CLI (`python -m src.pipeline <command>`) fronts ingest, preprocessing, SVD, analysis, and the end-to-end pipeline so orchestration stays in one place.
 - All heavy compute steps will be GPU-aware and configured through a `.env` file documented in the README.
 
 ## Data & Naming Conventions

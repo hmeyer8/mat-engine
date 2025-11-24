@@ -1,0 +1,12 @@
+{
+  "tile_id": "ne-tile-002",
+  "lat": 41.2587,
+  "lon": -95.9378,
+  "ndvi": 0.65,
+  "stress_score": 0.27,
+  "nitrogen_deficiency_prob": 0.2,
+  "pest_fungus_prob": 0.14,
+  "svd_temporal_energy": 0.71,
+  "color": "#d4b114",
+  "last_updated": "2024-05-22"
+}

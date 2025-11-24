@@ -11,16 +11,16 @@ setup:
 	. .\.venv\Scripts\activate && pip install --upgrade pip && pip install -r requirements.txt
 
 ingest:
-	$(PYTHON) -m src.ingest.run_ingest $(FIELD) $(ZIP) $(START) $(END)
+	$(PYTHON) -m src.pipeline ingest $(FIELD) $(ZIP) $(START) $(END)
 
 preprocess:
-	$(PYTHON) -m src.preprocessing.run_preprocessing $(FIELD)
+	$(PYTHON) -m src.pipeline preprocess $(FIELD)
 
 svd:
-	$(PYTHON) -m src.temporal_svd.run_svd $(FIELD)
+	$(PYTHON) -m src.pipeline svd $(FIELD)
 
 overlay:
-	$(PYTHON) -m src.analysis.build_overlay $(FIELD)
+	$(PYTHON) -m src.pipeline analyze $(FIELD)
 
 pipeline: ingest preprocess svd overlay
 

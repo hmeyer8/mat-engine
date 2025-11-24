@@ -1,0 +1,24 @@
+{
+  "region": "Nebraska",
+  "generated_at": "2024-06-01",
+  "tiles": [
+    {
+      "tile_id": "ne-tile-001",
+      "lat": 40.8136,
+      "lon": -96.7026,
+      "path": "ne-tile-001.json"
+    },
+    {
+      "tile_id": "ne-tile-002",
+      "lat": 41.2587,
+      "lon": -95.9378,
+      "path": "ne-tile-002.json"
+    },
+    {
+      "tile_id": "ne-tile-003",
+      "lat": 41.5000,
+      "lon": -99.9018,
+      "path": "ne-tile-003.json"
+    }
+  ]
+}

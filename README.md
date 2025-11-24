@@ -43,20 +43,25 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 
 For the React UI, copy `ui/.env.example` → `ui/.env` and set `VITE_NEXT_PUBLIC_API_URL` (and optionally `VITE_MAPS_API_KEY`) so the dashboard points at the same FastAPI instance.
 
+**Copernicus credentials note:** To enable real Sentinel-2 NDVI ingest, set `CDSE_CLIENT_ID` and `CDSE_CLIENT_SECRET` from your Copernicus Data Space account. If unset or if field geometry is missing, ingest falls back to simulated data. Keep all secrets in `.env` (never committed).
+
+### How to get Copernicus client credentials
+1. Go to https://dataspace.copernicus.eu and sign in (create an account if needed).
+2. Open your profile/avatar → **Access tokens** / **Applications** → create a new application/client.
+3. Copy the **Client ID** and **Client Secret** once they’re shown.
+4. Put them in your local `.env` (gitignored): `CDSE_CLIENT_ID=<id>`, `CDSE_CLIENT_SECRET=<secret>`.
+5. The backend will automatically exchange them for short-lived bearer tokens when ingest runs—no manual token copy/paste required.
+
 Each stage exposes a CLI (or a `make` target). Replace `demo-field` with a real identifier.
 
 ```bash
-# 1) Ingest Sentinel-2 scenes (mock data today)
-python -m src.ingest.run_ingest demo-field 68430 2022-01-01 2023-01-01
-
-# 2) Preprocess: cloud mask, NDVI stack, tiling
-python -m src.preprocessing.run_preprocessing demo-field --tile-size 64
-
-# 3) Temporal SVD per tile stack
-python -m src.temporal_svd.run_svd demo-field --rank 3
-
-# 4) Aggregate into overlay + summary
-python -m src.analysis.build_overlay demo-field
+# Unified pipeline (each step is a subcommand)
+python -m src.pipeline ingest demo-field 68430 2022-01-01 2023-01-01
+python -m src.pipeline preprocess demo-field --tile-size 64
+python -m src.pipeline svd demo-field --rank 3
+python -m src.pipeline analyze demo-field --rank 3
+# or run everything (CNN fusion on by default)
+python -m src.pipeline pipeline demo-field 68430 2022-01-01 2023-01-01 --rank 3
 
 # Convenience target (runs all steps)
 make FIELD=demo-field pipeline
@@ -95,6 +100,7 @@ Need more detail? Jump to the new [Farmer Playbook](docs/farmer_playbook.md).
 | POST | `/fields` | Register field geometry/ZIP |
 | GET | `/fields/{field_id}/summary` | Aggregated health metrics (runs analysis on demand) |
 | GET | `/fields/{field_id}/overlay` | Streams PNG overlay |
+| GET | `/fields/{field_id}/overlay/data` | Returns numeric overlay grid + bounds for map rendering |
 | GET | `/fields/{field_id}/indices/ndvi` | NDVI temporal profile |
 | GET | `/fields/{field_id}/svd/stats` | Singular values + explained variance |
 
@@ -166,7 +172,7 @@ Need more detail? Jump to the new [Farmer Playbook](docs/farmer_playbook.md).
 
 ## What’s Not Implemented Yet ❌
 
-- CNN / ConvLSTM predictive models (heuristic only).
+- Production-ready CNN/ConvLSTM training (the repo now ships a tiny CNN scorer, but it is untrained).
 - Real Sentinel-2 downloads + cloud masking (ingest currently simulates metadata).
 - Parcel search, ZIP-based UI, USDA CDL integration.
 - Authentication, RBAC, or grower accounts.

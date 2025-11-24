@@ -37,7 +37,8 @@ class GPUSettings:
 @dataclass(slots=True)
 class ApiSettings:
     host: str = os.getenv("MAT_API_HOST", "0.0.0.0")
-    port: int = int(os.getenv("MAT_API_PORT", "8080"))
+    port: int = int(os.getenv("PORT") or os.getenv("MAT_API_PORT", "8080"))
+    environment: str = os.getenv("APP_ENV", "development")
     cors_origins: List[str] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:  # noqa: D401
@@ -58,12 +59,19 @@ class MapsSettings:
 
 
 @dataclass(slots=True)
+class CacheSettings:
+    root: Path = Path(os.getenv("MAT_CACHE_DIR", "/cache"))
+    tiles_dir: Path = root / "tiles"
+
+
+@dataclass(slots=True)
 class Settings:
     data: DataPaths = field(default_factory=DataPaths)
     gpu: GPUSettings = field(default_factory=GPUSettings)
     api: ApiSettings = field(default_factory=ApiSettings)
     sentinel: SentinelSettings = field(default_factory=SentinelSettings)
     maps: MapsSettings = field(default_factory=MapsSettings)
+    cache: CacheSettings = field(default_factory=CacheSettings)
 
 
 @lru_cache(maxsize=1)
@@ -72,4 +80,13 @@ def get_settings() -> Settings:
     settings = Settings()
     settings.data.raw.mkdir(parents=True, exist_ok=True)
     settings.data.processed.mkdir(parents=True, exist_ok=True)
+    try:
+        settings.cache.root.mkdir(parents=True, exist_ok=True)
+        settings.cache.tiles_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        fallback_root = PROJECT_ROOT / "cache"
+        fallback_root.mkdir(parents=True, exist_ok=True)
+        settings.cache.root = fallback_root
+        settings.cache.tiles_dir = fallback_root / "tiles"
+        settings.cache.tiles_dir.mkdir(parents=True, exist_ok=True)
     return settings

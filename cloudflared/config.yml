@@ -1,0 +1,6 @@
+tunnel: matengine
+credentials-file: /home/henry/.cloudflared/matengine.json
+ingress:
+  - hostname: api.meyerag.tech
+    service: http://localhost:8080
+  - service: http_status:404

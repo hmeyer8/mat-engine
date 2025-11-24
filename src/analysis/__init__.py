@@ -1,1 +1,1 @@
-"""Field-level aggregation and overlay generation."""
+"""Field-level aggregation, overlay generation, and tile cache access."""

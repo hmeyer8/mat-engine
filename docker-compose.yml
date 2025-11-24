@@ -2,17 +2,29 @@ version: "3.10"
 
 services:
   api:
+    image: ghcr.io/hmeyer8/mat-engine-api:latest
     build:
       context: .
       dockerfile: Dockerfile
     container_name: matengine-api
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     environment:
       MAT_API_HOST: 0.0.0.0
       MAT_API_PORT: 8080
-      MAT_API_CORS: http://localhost:5173
       MAT_DATA_DIR: /app/data
+      MAT_CACHE_DIR: /cache
     volumes:
       - ./data:/app/data
-      - ./.env:/app/.env:ro
+      - ./cache:/cache
+    restart: always
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    command: --cleanup --interval 30
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: always
