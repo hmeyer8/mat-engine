@@ -24,12 +24,14 @@ def test_pipeline_roundtrip(tmp_path: Path, monkeypatch):
     summary = run_analysis(field_id, use_cnn=True)
     assert summary["field_health_score"] >= 0.0
     assert Path(summary["overlay_path"]).exists()
+    assert Path(summary["svd_overlay_path"]).exists()
     assert "cnn" in summary
     data_path = Path(summary["overlay_data_path"])
     assert data_path.exists()
     import json
     overlay_data = json.loads(data_path.read_text())
     assert overlay_data["values"]
+    assert Path(summary["svd_overlay_data_path"]).exists()
 
     # End-to-end helper should also work
     summary = run_pipeline(

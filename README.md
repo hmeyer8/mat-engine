@@ -1,235 +1,139 @@
-MAT Engine
-====================================
-A Python-based satellite analysis system that turns Sentinel-2 multispectral scenes into farmer-ready overlays, processed locally for privacy and reproducibility.
+Comparing CNN vs. Temporal SVD for Early Nitrogen Deficiency Detection (Nebraska)
+===============================================================================
+Goal: use Sentinel-2 multispectral time series to warn farmers about likely nitrogen (N) deficiency ~7 days before visible symptoms, and compare two approaches side by side:
 
-The repository mirrors the updated specification: deterministic ingest → preprocess → temporal SVD → overlay generation, a FastAPI backend, a Vite/React UI, and documentation tuned for humans *and* automation agents.
+- CNN (spatial–spectral–temporal deep learning): learn textures + spectral shifts (e.g., red-edge drop, greener visible bands from chlorophyll loss), with options for 3D/temporal CNN or CNN+LSTM; explore Fourier-style convolutions for efficiency.
+- Temporal SVD (linear low-rank analysis): PCA/SVD on multi-date indices to extract dominant growth patterns and anomaly components that flag early N stress; use lightweight classifiers or thresholds on principal component scores.
 
----
+This repository is the working codebase for that comparison: deterministic ingest, preprocessing, temporal SVD, a starter CNN scorer, a FastAPI backend, and a React/Vite UI for visualization.
 
-## Environment Setup ⚙️
+What we will do
+---------------
+- Assemble Sentinel-2 time series (10–20 m, ~5-day revisit) for Nebraska crops; compute NDVI, NDRE, and chlorophyll-sensitive indices.
+- Train/benchmark two predictors:
+  - CNN pathway: patch-based CNN with temporal context (stacked dates or CNN+LSTM); experiment with Fourier convolutions for speed.
+  - SVD pathway: temporal PCA/SVD over indices to capture healthy growth vs. anomaly modes; simple classifier or threshold for “deficiency in ~7 days”.
+- Compare accuracy, early-warning lead time, compute cost, and interpretability; visualize saliency/attention for CNN and principal components for SVD.
+- Deliver an end-to-end demo: ingest -> preprocess -> SVD stats -> (optional) CNN inference -> overlay + NDVI timeline in the UI.
 
-**Python:** 3.10+ (tested on 3.11)
+Hardware & assumptions
+----------------------
+- Target dev box: Core i5-13KF CPU, RTX 4060 GPU, 2 TB SSD.
+- Python 3.10+; Node 18+ for the UI.
+- Real Sentinel-2 access via Copernicus Data Space (set `CDSE_CLIENT_ID`/`CDSE_CLIENT_SECRET`). If missing, the pipeline can fall back to simulated data for demos.
 
+Setup
+-----
 ```bash
 git clone https://github.com/hmeyer8/mat-engine.git
 cd mat-engine
+
 python -m venv .venv
-source .venv/bin/activate        # Linux/macOS
-.\.venv\Scripts\activate         # Windows PowerShell
+.\.venv\Scripts\activate        # Windows PowerShell
+source .venv/bin/activate       # Linux/macOS
 pip install -r requirements.txt
 
-# Optional GPU build (CUDA 12.1)
+# Optional GPU wheels (CUDA 12.1)
 pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio
 ```
 
-Copy `.env.example` → `.env` and fill in the blanks:
-
-```env
-MAT_DATA_DIR=./data
-MAT_CACHE_DIR=./.cache
-MAT_SAT_API_KEY=your-copernicus-token
-COPERNICUS_USERNAME=...
-COPERNICUS_PASSWORD=...
-MAT_TILES_CACHE_DAYS=14
-MAT_GPU_ENABLED=true
-MAT_GPU_DEVICE=cuda:0
-MAT_GPU_PRECISION=fp32
-MAT_API_HOST=0.0.0.0
-MAT_API_PORT=8080
-MAT_API_CORS=http://localhost:5173
-MAPS_API_KEY=
-NEXT_PUBLIC_API_URL=http://localhost:8080
-```
-
-For the React UI, copy `ui/.env.example` → `ui/.env` and set `VITE_NEXT_PUBLIC_API_URL` (and optionally `VITE_MAPS_API_KEY`) so the dashboard points at the same FastAPI instance.
-
-**Copernicus credentials note:** To enable real Sentinel-2 NDVI ingest, set `CDSE_CLIENT_ID` and `CDSE_CLIENT_SECRET` from your Copernicus Data Space account. If unset or if field geometry is missing, ingest falls back to simulated data. Keep all secrets in `.env` (never committed).
-
-### How to get Copernicus client credentials
-1. Go to https://dataspace.copernicus.eu and sign in (create an account if needed).
-2. Open your profile/avatar → **Access tokens** / **Applications** → create a new application/client.
-3. Copy the **Client ID** and **Client Secret** once they’re shown.
-4. Put them in your local `.env` (gitignored): `CDSE_CLIENT_ID=<id>`, `CDSE_CLIENT_SECRET=<secret>`.
-5. The backend will automatically exchange them for short-lived bearer tokens when ingest runs—no manual token copy/paste required.
-
-Each stage exposes a CLI (or a `make` target). Replace `demo-field` with a real identifier.
-
+Environment files
+-----------------
+Copy the examples and fill secrets:
 ```bash
-# Unified pipeline (each step is a subcommand)
+cp .env.example .env
+cp ui/.env.example ui/.env
+```
+Key vars:
+- `MAT_DATA_DIR`, `MAT_CACHE_DIR`: where raw/processed data live.
+- `CDSE_CLIENT_ID`, `CDSE_CLIENT_SECRET`: Copernicus API access.
+- `MAT_GPU_ENABLED`, `MAT_GPU_DEVICE`: enable GPU.
+- `NEXT_PUBLIC_API_URL` / `VITE_NEXT_PUBLIC_API_URL` (UI) should point at the FastAPI host (default `http://localhost:8080`).
+- `VITE_MAPS_API_KEY` is required for the Google Maps JavaScript SDK used by the dashboard. Generate a browser key in Google Cloud (Maps JavaScript API + Data Layer enabled) and place it in `ui/.env`.
+
+Field boundaries for the UI live in `ui/public/geojson/fields.geojson`. Drop in your own GeoJSON polygons (one feature per field) and reload the Vite dev server to see them in the map picker, or use the new "Load farmland in map" control (see below) to fetch OpenStreetMap parcels on demand.
+
+Pipeline commands (replace ids/dates as needed)
+-----------------------------------------------
+```bash
+# Ingest Sentinel-2 scenes (or simulated) for a field/ZIP/date range
 python -m src.pipeline ingest demo-field 68430 2022-01-01 2023-01-01
+
+# Precompute indices/tiles
 python -m src.pipeline preprocess demo-field --tile-size 64
+
+# Temporal SVD (stats + components)
 python -m src.pipeline svd demo-field --rank 3
+
+# Analysis stage (overlays, scores)
 python -m src.pipeline analyze demo-field --rank 3
-# or run everything (CNN fusion on by default)
+
+# End-to-end
 python -m src.pipeline pipeline demo-field 68430 2022-01-01 2023-01-01 --rank 3
 
-# Convenience target (runs all steps)
+# Makefile shortcut
 make FIELD=demo-field pipeline
+```
 
-# Serve API locally
+Run services
+------------
+```bash
+# API
 uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8080
 
-# React UI dashboard
-cd ui && npm install && npm run dev
+# UI
+cd ui
+npm install
+npm run dev
 ```
+Open the dashboard, point it at `NEXT_PUBLIC_API_URL`, and load `demo-field` (or your field id) to see overlay + NDVI timeline; SVD stats show explained variance and singular values.
 
-Docker option:
+Interactive Google Maps dashboard
+---------------------------------
+- **Field selection:** The UI now boots with a Google Maps Data Layer that reads `ui/public/geojson/fields.geojson`. Click any polygon to highlight it, inspect crop metadata, and push the selected `field_id` into the analytics workflow.
+- **Dynamic parcels for Nebraska:** Pan/zoom over Nebraska and press **Load farmland in map** to call `GET /api/fields/osm`. The backend proxies the Overpass API, converts farmland ways/relations into feature-rich GeoJSON, and streams them to the browser so you can select any parcel in view. Optional crop filters narrow the query (`corn`, `soybean`, etc.).
+- **Sentinel-2 date picker:** After a selection, the client calls `/api/available_dates?field_id=<id>` (or falls back to placeholder dates) to populate a dropdown of cloud-free scenes. Pick a date, then trigger analysis.
+- **Heatmap overlays:** Toggle CNN and SVD overlays to project either `fields/<id>/overlay` or `/fields/<id>/svd/overlay` PNGs directly onto the map via `google.maps.GroundOverlay`. Bounds are derived from the GeoJSON polygon, so the imagery snaps to each field footprint.
+- **Field analytics popup:** Clicking **Analyze field** now queues a background job (`POST /api/jobs`), polls `/api/jobs/<id>` for status, and fetches `/api/analysis/<field_id>` once the pipeline is done. The info window updates with severity, trend, confidence, and recommendations while the side panel mirrors the same summary plus model metrics.
+- **Manual entry still works:** The classic `FieldSelector` form remains alongside the map so you can paste an ID or run scripted scenarios.
 
-```bash
-docker compose up --build api
-```
+If `/api/available_dates`, `/api/jobs`, or `/api/analysis/<field_id>` are not yet implemented in your FastAPI app, the UI injects deterministic placeholder dates/insights so the map remains usable while you finish the backend.
 
----
+New API surface (FastAPI)
+-------------------------
+- `GET /api/fields/osm?bbox=<south,west,north,east>&crop=corn` → Returns a GeoJSON FeatureCollection assembled from the OpenStreetMap Overpass API. The UI passes the current map bounds, making it easy to browse any Nebraska parcel without pre-baking shapefiles.
+- `GET /api/available_dates?field_id=<id>` → `{ field_id, dates: ["2025-06-05", ...] }`
+  - Intended to query Sentinel-2 metadata (Copernicus, Sentinel Hub, etc.) for the footprints represented in the GeoJSON file.
+  - Stub behaviour: return recent weekly dates until the real catalog integration is wired up.
+- `POST /api/jobs` with `{ field_id, start_date, end_date, geometry, zip_code?, source? }`
+  - Persists the polygon/metadata, writes a job record under `data/jobs`, and schedules the full pipeline (ingest → preprocess → SVD → CNN overlay) in a background task.
+- `GET /api/jobs/<job_id>` → `{ job_id, status, message, result? }` so the UI can poll until the worker flips from `queued`/`running` to `succeeded` or `failed`.
+- `GET /api/analysis/<field_id>` → Returns the latest summary assembled from `analysis_summary.json`, including overlay URLs, CNN/SVD metrics, and recommendations shown in the dashboard panel.
 
-## Farmer Quick Start 🚜
+Both endpoints are thin orchestration layers on top of the existing `src/pipeline.py` steps. Keep model/preprocessing code in dedicated modules so these routes remain declarative and testable.
 
-1. **Run the included demo** – the repo ships with `test-field` outputs. Start the API (`uvicorn src.api.main:app --reload`) and the UI (`cd ui && npm run dev`), then select `test-field` in the dashboard to see the overlay + NDVI timeline immediately.
-2. **Follow the Farmer Playbook** – `docs/farmer_playbook.md` condenses the grower workflow, hardware checklist, and sharing plan into a single page you can email ahead of a field day.
-3. **Swap in your field** – drop a GeoJSON boundary + ingest manifest under `data/raw/<field_id>/`, copy `.env.example` → `.env`, then run `make FIELD=<field_id> ZIP=<zip> pipeline` to regenerate NDVI stacks, overlays, and scores.
-4. **Generate a farmer report** – `python scripts/farmer_report.py <field_id>` prints a console summary and writes `report.md` alongside the overlay so you always leave the grower with an actionable handout.
+How we will compare CNN vs. SVD
+-------------------------------
+- **Data**: Sentinel-2 bands or derived indices (NDVI, NDRE, chlorophyll index) over time; field polygons for Nebraska crops.
+- **CNN path**: patch inputs with stacked dates; baseline CNN/LSTM; optional Fourier-style conv for efficiency; outputs “N deficiency likely in 7 days” + confidence. Visualize attention/saliency.
+- **SVD path**: temporal matrices (time x indices or time x pixels) -> SVD -> top components; threshold or small classifier on PC scores for early warning. Plot PCs to explain stress patterns.
+- **Metrics**: early-warning lead time, precision/recall/AUC, inference time, GPU/CPU cost, interpretability artifacts.
+- **Hybrid idea**: use SVD for denoising/compression then a compact CNN/MLP; or SVD to flag anomalies then CNN to confirm.
 
-Need more detail? Jump to the new [Farmer Playbook](docs/farmer_playbook.md).
+Repository map (high level)
+---------------------------
+- `src/` – pipeline, ingest, preprocessing, SVD, API.
+- `ui/` – React/Vite dashboard.
+- `docs/` – architecture and playbooks.
+- `data/` – raw/processed data (gitignored).
+- `scripts/` – helper tooling (e.g., reports).
 
----
+Roadmap (near term)
+-------------------
+- Wire real Sentinel-2 ingest (Copernicus + masks) and multi-index preprocessing.
+- Baseline temporal CNN/LSTM training on Nebraska plots; add Fourier conv experiment.
+- Harden temporal SVD + classifier for anomaly alerts; export PC visualizations.
+- Benchmark both paths on shared datasets (accuracy, lead time, cost); document results.
+- Polish UI: map overlays, side-by-side CNN vs. SVD signals, downloadables for farmers.
 
-## FastAPI Endpoints & Schemas
-
-| Method | Route | Description |
-| ------ | ----- | ----------- |
-| GET | `/health` | Service liveness |
-| POST | `/fields` | Register field geometry/ZIP |
-| GET | `/fields/{field_id}/summary` | Aggregated health metrics (runs analysis on demand) |
-| GET | `/fields/{field_id}/overlay` | Streams PNG overlay |
-| GET | `/fields/{field_id}/overlay/data` | Returns numeric overlay grid + bounds for map rendering |
-| GET | `/fields/{field_id}/indices/ndvi` | NDVI temporal profile |
-| GET | `/fields/{field_id}/svd/stats` | Singular values + explained variance |
-
-**Input example** (`POST /fields`):
-
-```json
-{
-  "field_id": "example123",
-  "zip_code": "68430",
-  "geometry": {
-    "type": "Polygon",
-    "coordinates": [[[ -96.75, 40.60 ], [ -96.74, 40.60 ], [ -96.74, 40.61 ], [ -96.75, 40.61 ], [ -96.75, 40.60 ]]]
-  }
-}
-```
-
-**Summary output**:
-
-```json
-{
-  "field_id": "example123",
-  "field_health_score": 0.83,
-  "stress_label": "moderate",
-  "overlay_path": "data/processed/example123/overlay.png",
-  "svd_stats_path": "data/processed/example123/svd_stats.json"
-}
-```
-
-**NDVI temporal profile**:
-
-```json
-{
-  "field_id": "example123",
-  "index": "ndvi",
-  "temporal_profile": [0.62, 0.68, 0.71, 0.66],
-  "latest": 0.66
-}
-```
-
----
-
-## Backend ↔ UI Contract
-
-- UI reads `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8080`).
-- Overlay PNG fetched from `/fields/{field_id}/overlay` and draped on Google Maps via `MAPS_API_KEY` (UI currently renders PNG directly; maps integration is next).
-- Future endpoints (`/fields/{id}/tiles`, `/auth/*`) are documented for planning but not yet implemented.
-
----
-
-## Data Placement & Naming
-
-| Location | Contents | Notes |
-|----------|----------|-------|
-| `data/raw/<field_id>/` | SAFE/GeoTIFF scenes + `ingest_manifest.json` | Scenes named `S2A_<field>_<index>.tif` (example). |
-| `data/processed/<field_id>/ndvi_stack.npz` | NDVI tensor `(T,H,W)` | Produced by preprocessing stage. |
-| `data/processed/<field_id>/svd_stats.json` | `singular_values`, `explained_variance` | Feeds `/svd/stats`. |
-| `data/processed/<field_id>/overlay.png` | RGB overlay | Color scale: green→yellow→orange→red. |
-| `data/processed/<field_id>/report.md` | Farmer-facing summary generated by `scripts/farmer_report.py`. | Share during scouting visits or attach to cooperative notes. |
-
----
-
-## GPU & Performance Notes
-
-- CUDA 12.x drivers, cuDNN 9+, PyTorch installed via the CUDA 12.1 wheels.
-- Minimum hardware: RTX 3060 12 GB (or higher) for CNN workloads; current NDVI/SVD pipeline runs on CPU if `MAT_GPU_ENABLED=false`.
-- Future PyO3/Rust accelerators will respect `MAT_GPU_ENABLED` and `MAT_GPU_DEVICE`.
-
----
-
-## What’s Not Implemented Yet ❌
-
-- Production-ready CNN/ConvLSTM training (the repo now ships a tiny CNN scorer, but it is untrained).
-- Real Sentinel-2 downloads + cloud masking (ingest currently simulates metadata).
-- Parcel search, ZIP-based UI, USDA CDL integration.
-- Authentication, RBAC, or grower accounts.
-
-Explicit non-goals keep the roadmap grounded.
-
----
-
-## Task Map ✅
-
-1. Implement real Sentinel-2 ingest (Copernicus + AWS mirrors).
-2. Wire S2 Cloudless + multi-index preprocessing.
-3. Tile generation + spatial joins with parcel boundaries.
-4. Extend temporal alignment + SVD batching to multi-field workloads.
-5. Export overlays as GeoTIFF/COG alongside PNG.
-6. Build the React farmer dashboard (auth, ZIP lookup, parcel picker, overlay viewer).
-7. Add authentication + secure storage.
-8. Train baseline CNN/ConvLSTM models and expose inference endpoints.
-9. Validate the entire pipeline on a demo ZIP code.
-
----
-
-## Mathematical Appendix 🧮
-
-Given a tile’s time-series matrix $\mathbf{X} \in \mathbb{R}^{T \times F}$:
-
-$$\mathbf{X} = \mathbf{U}\mathbf{\Sigma}\mathbf{V}^\top$$
-
-- $\mathbf{U}$ captures temporal modes (seasonality, stress onset).
-- $\mathbf{\Sigma}$ ranks each mode by energy.
-- $\mathbf{V}$ maps spectral contributions (bands/indices).
-
-Low-rank approximation:
-
-$$\mathbf{X}_k = \mathbf{U}_k \mathbf{\Sigma}_k \mathbf{V}_k^\top$$
-
-Vegetation changes slowly, so a small $k$ captures most agronomic signal.
-
----
-
-## Academic Foundations
-
-- Jensen, J. R. *Introductory Digital Image Processing*. Pearson, 2015.
-- Verrelst et al. “Optical remote sensing of vegetation traits.” *Remote Sensing of Environment*, 2015.
-- Urbazaev et al. “SVD for Sentinel-2 vegetation time-series.” *IEEE JSTARS*, 2016.
-- Rußwurm & Körner. “Temporal ConvLSTM for vegetation.” *ISPRS*, 2018.
-- Féret et al. “Reflectance pattern dynamics.” *Remote Sensing of Environment*, 2019.
-- Zhu & Woodcock. “Cloud detection for optical imagery.” *IEEE TGRS*, 2014.
-
----
-
-## Future Work
-
-- Integrate Landsat 8/9 for denser cadence.
-- Ship CNN-based nitrogen/stress classifiers with TorchScript/ONNX exports.
-- Historical grower reports + comparison charts.
-- Offline “field kit” build for rugged laptops.
-- Edge-device export for tractors/drones.
-
-Built to be understandable, scientifically grounded, and farmer-first. If anything is unclear, open an issue and it will be clarified immediately.
+If anything is unclear or out of date, open an issue and we will align the docs and code.

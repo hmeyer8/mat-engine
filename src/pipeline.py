@@ -5,7 +5,7 @@ import argparse
 import os
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Tuple
@@ -71,6 +71,16 @@ def _conv2d_numpy(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     return out
 
 
+def _primary_svd_mode(ndvi_stack: np.ndarray) -> np.ndarray:
+    """Return the spatial mode associated with the top singular vector."""
+    time_steps, height, width = ndvi_stack.shape
+    matrix = ndvi_stack.reshape(time_steps, height * width)
+    _, _, vt = np.linalg.svd(matrix, full_matrices=False)
+    primary = vt[0].reshape(height, width)
+    normalized = (primary - primary.min()) / (primary.max() - primary.min() + 1e-6)
+    return normalized.astype(np.float32)
+
+
 if nn is not None:  # pragma: no cover - only defined when torch is present
     class _TinyCNN(nn.Module):  # type: ignore[misc]
         """Very small CNN used for stress scoring."""
@@ -100,10 +110,11 @@ class CNNStressModel:
     """Wrap CNN inference with a numpy fallback so the pipeline stays dependency-light."""
 
     device: str = "cpu"
+    available: bool = field(init=False, default=False)
+    model: _TinyCNN | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         self.available = torch is not None and nn is not None
-        self.model = None
         if self.available:
             self.model = _TinyCNN().to(self.device)
             self.model.eval()
@@ -435,15 +446,22 @@ def run_analysis(field_id: str, *, rank: int = 3, use_cnn: bool = True, cnn_devi
         cnn_result = cnn_model.predict(ndvi_stack)
         stress_map = 0.6 * stress_map + 0.4 * cnn_result["stress_map"]  # type: ignore[index]
 
+    svd_overlay = _primary_svd_mode(ndvi_stack)
+
     overlay_img = _colorize(stress_map)
     overlay_path = processed_dir / "overlay.png"
     overlay_img.save(overlay_path)
+
+    svd_overlay_img = _colorize(svd_overlay)
+    svd_overlay_path = processed_dir / "svd_overlay.png"
+    svd_overlay_img.save(svd_overlay_path)
 
     summary = {
         "field_id": field_id,
         "field_health_score": round(1.0 - baseline_summary["stress_score"], 4),
         "stress_label": baseline_summary["label"],
         "overlay_path": str(overlay_path),
+        "svd_overlay_path": str(svd_overlay_path),
         "svd_stats_path": str(processed_dir / "svd_stats.json"),
     }
     if cnn_result:
@@ -452,16 +470,29 @@ def run_analysis(field_id: str, *, rank: int = 3, use_cnn: bool = True, cnn_devi
             "mean_stress": float(np.mean(cnn_result["stress_map"])),  # type: ignore[index]
         }
     # Save numeric overlay data for map rendering
+    bounds = _geometry_bounds(_load_geometry(field_id))
     overlay_data = {
         "field_id": field_id,
         "shape": list(stress_map.shape),
-        "bounds": _geometry_bounds(_load_geometry(field_id)),
+        "bounds": bounds,
         "values": stress_map.tolist(),
         "colormap": COLOR_SCALE,
     }
     overlay_data_path = processed_dir / "overlay_data.json"
     save_json(overlay_data_path, overlay_data)
     summary["overlay_data_path"] = str(overlay_data_path)
+
+    svd_overlay_payload = {
+        "field_id": field_id,
+        "shape": list(svd_overlay.shape),
+        "bounds": bounds,
+        "values": svd_overlay.tolist(),
+        "colormap": COLOR_SCALE,
+        "mode": "temporal-primary",
+    }
+    svd_overlay_data_path = processed_dir / "svd_overlay_data.json"
+    save_json(svd_overlay_data_path, svd_overlay_payload)
+    summary["svd_overlay_data_path"] = str(svd_overlay_data_path)
 
     save_json(processed_dir / "analysis_summary.json", summary)
     logger.info(

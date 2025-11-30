@@ -25,6 +25,7 @@ class DataPaths:
     root: Path = PROJECT_ROOT / "data"
     raw: Path = root / "raw"
     processed: Path = root / "processed"
+    jobs: Path = root / "jobs"
 
 
 @dataclass(slots=True)
@@ -80,6 +81,7 @@ def get_settings() -> Settings:
     settings = Settings()
     settings.data.raw.mkdir(parents=True, exist_ok=True)
     settings.data.processed.mkdir(parents=True, exist_ok=True)
+    settings.data.jobs.mkdir(parents=True, exist_ok=True)
     try:
         settings.cache.root.mkdir(parents=True, exist_ok=True)
         settings.cache.tiles_dir.mkdir(parents=True, exist_ok=True)
